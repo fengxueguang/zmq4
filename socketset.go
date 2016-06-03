@@ -563,3 +563,15 @@ func (soc *Socket) SetXpubNodrop(value bool) error {
 	}
 	return soc.setInt(C.ZMQ_XPUB_NODROP, val)
 }
+
+// ZMQ_USE_FD: Set the pre-allocated socket file descriptor
+//
+// Returns ErrorNotImplemented42 with ZeroMQ version < 4.2
+//
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+func (soc *Socket) SetUseFd(value int) error {
+	if minor < 2 {
+		return ErrorNotImplemented42
+	}
+	return soc.setInt(C.ZMQ_USE_FD, value)
+}

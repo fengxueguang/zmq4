@@ -487,3 +487,15 @@ func (soc *Socket) GetSocksProxy() (string, error) {
 }
 
 // ZMQ_XPUB_NODROP: SET ONLY? (not documented)
+
+// ZMQ_USE_FD: Retrieve the pre-allocated socket file descriptor
+//
+// Returns ErrorNotImplemented42 with ZeroMQ version < 4.2
+//
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+func (soc *Socket) GetUseFd(value int) (int, error) {
+	if minor < 2 {
+		return 0, ErrorNotImplemented42
+	}
+	return soc.getInt(C.ZMQ_USE_FD)
+}
