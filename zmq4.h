@@ -19,3 +19,13 @@
 #define ZMQ_TOS -1
 #define ZMQ_XPUB_NODROP -1
 #endif
+// TODO 4.2
+#if ZMQ_VERSION_MINOR < 2
+#define ZMQ_SERVER -1
+#define ZMQ_CLIENT -2
+#define ZMQ_RADIO -3
+#define ZMQ_DISH -4
+#define ZMQ_GATHER -5
+#define ZMQ_SCATTER -6
+#define ZMQ_DGRAM -7
+#endif

@@ -5,7 +5,10 @@ package zmq4
 #cgo windows CFLAGS: -I/usr/local/include
 #cgo windows LDFLAGS: -L/usr/local/lib -lzmq
 #include <zmq.h>
+// TODO 4.2
+#if ZMQ_VERSION_MINOR < 2
 #include <zmq_utils.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include "zmq4.h"
@@ -45,6 +48,16 @@ int zmq_proxy_steerable (const void *frontend, const void *backend, const void *
 
 #endif
 
+// TODO 4.2
+#if ZMQ_VERSION_MINOR < 2
+int zmq_join (void *s, const char *group)   { return 0; }
+int zmq_leave (void *s, const char *group)  { return 0; }
+int zmq_msg_set_routing_id(zmq_msg_t *msg, uint32_t routing_id) { return 0; }
+uint32_t zmq_msg_routing_id(zmq_msg_t *msg) { return 0; }
+int zmq_msg_set_group(zmq_msg_t *msg, const char *group) { return 0; }
+const char *zmq_msg_group(zmq_msg_t *msg) { return NULL; }
+#endif
+
 void zmq4_get_event40(zmq_msg_t *msg, int *ev, int *val) {
     zmq_event_t event;
     const char* data = (char*)zmq_msg_data(msg);
@@ -73,6 +86,12 @@ import (
 	"unsafe"
 )
 
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+type OptSetRoutingId uint32
+type OptGetRoutingId bool
+type OptSetGroup string
+type OptGetGroup bool
+
 var (
 	defaultCtx *Context
 
@@ -83,6 +102,7 @@ var (
 	ErrorMoreExpected          = errors.New("More expected")
 	ErrorNotImplemented405     = errors.New("Not implemented, requires 0MQ version 4.0.5")
 	ErrorNotImplemented41      = errors.New("Not implemented, requires 0MQ version 4.1")
+	ErrorNotImplemented42      = errors.New("Not implemented, requires 0MQ version 4.2")
 	ErrorNotImplementedWindows = errors.New("Not implemented on Windows")
 	ErrorNoSocket              = errors.New("No such socket")
 )
@@ -364,6 +384,15 @@ const (
 	PULL   = Type(C.ZMQ_PULL)
 	PAIR   = Type(C.ZMQ_PAIR)
 	STREAM = Type(C.ZMQ_STREAM)
+	// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+	// Socket types that require ZeroMQ 4.2
+	SERVER  = Type(C.ZMQ_SERVER)
+	CLIENT  = Type(C.ZMQ_CLIENT)
+	RADIO   = Type(C.ZMQ_RADIO)
+	DISH    = Type(C.ZMQ_DISH)
+	GATHER  = Type(C.ZMQ_GATHER)
+	SCATTER = Type(C.ZMQ_SCATTER)
+	DGRAM   = Type(C.ZMQ_DGRAM)
 )
 
 /*
@@ -395,6 +424,22 @@ func (t Type) String() string {
 		return "PAIR"
 	case STREAM:
 		return "STREAM"
+	// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+	// Socket types that require ZeroMQ 4.2
+	case SERVER:
+		return "SERVER"
+	case CLIENT:
+		return "CLIENT"
+	case RADIO:
+		return "RADIO"
+	case DISH:
+		return "DISH"
+	case GATHER:
+		return "GATHER"
+	case SCATTER:
+		return "SCATTER"
+	case DGRAM:
+		return "DGRAM"
 	}
 	return "<INVALID>"
 }
@@ -603,6 +648,10 @@ func (ctx *Context) NewSocket(t Type) (soc *Socket, err error) {
 	if !ctx.opened {
 		return soc, ErrorContextClosed
 	}
+	// TODO 4.2
+	if t < 0 {
+		return soc, ErrorNotImplemented42
+	}
 	s, e := C.zmq_socket(ctx.ctx, C.int(t))
 	if s == nil {
 		err = errget(e)
@@ -711,7 +760,7 @@ Receive a message part from a socket.
 For a description of flags, see: http://api.zeromq.org/4-1:zmq-msg-recv#toc2
 */
 func (soc *Socket) Recv(flags Flag) (string, error) {
-	b, err := soc.RecvBytes(flags)
+	b, _, err := soc.RecvBytesWithOpts(flags)
 	return string(b), err
 }
 
@@ -721,25 +770,79 @@ Receive a message part from a socket.
 For a description of flags, see: http://api.zeromq.org/4-1:zmq-msg-recv#toc2
 */
 func (soc *Socket) RecvBytes(flags Flag) ([]byte, error) {
+	b, _, err := soc.RecvBytesWithOpts(flags)
+	return b, err
+}
+
+/*
+Receive a message part from a socket, including message options.
+
+For a description of flags, see: http://api.zeromq.org/4-1:zmq-msg-recv#toc2
+
+Valid options are
+
+ - OptGetRoutingId(true)
+ - OptGetGroup(true)
+
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+*/
+func (soc *Socket) RecvWithOpts(flags Flag, options ...interface{}) (string, []interface{}, error) {
+	b, o, err := soc.RecvBytesWithOpts(flags, options...)
+	return string(b), o, err
+}
+
+/*
+Receive a message part from a socket, including message options.
+
+For a description of flags, see: http://api.zeromq.org/4-1:zmq-msg-recv#toc2
+
+Valid options are
+
+ - OptGetRoutingId(true)
+ - OptGetGroup(true)
+
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+*/
+func (soc *Socket) RecvBytesWithOpts(flags Flag, options ...interface{}) ([]byte, []interface{}, error) {
+	opts := make([]interface{}, len(options))
 	if !soc.opened {
-		return []byte{}, ErrorSocketClosed
+		return []byte{}, opts, ErrorSocketClosed
 	}
 	var msg C.zmq_msg_t
 	if i, err := C.zmq_msg_init(&msg); i != 0 {
-		return []byte{}, errget(err)
+		return []byte{}, opts, errget(err)
 	}
 	defer C.zmq_msg_close(&msg)
 
 	size, err := C.zmq_msg_recv(&msg, soc.soc, C.int(flags))
 	if size < 0 {
-		return []byte{}, errget(err)
+		return []byte{}, opts, errget(err)
 	}
 	if size == 0 {
-		return []byte{}, nil
+		return []byte{}, opts, nil
 	}
 	data := make([]byte, int(size))
 	C.zmq4_memcpy(unsafe.Pointer(&data[0]), C.zmq_msg_data(&msg), C.size_t(size))
-	return data, nil
+
+	for i, option := range options {
+		switch option.(type) {
+		// TODO 4.2
+		case OptGetRoutingId:
+			if minor < 2 {
+				return []byte{}, opts, ErrorNotImplemented42
+			}
+			opts[i] = uint32(C.zmq_msg_routing_id(&msg))
+		case OptGetGroup:
+			if minor < 2 {
+				return []byte{}, opts, ErrorNotImplemented42
+			}
+			opts[i] = C.GoString(C.zmq_msg_group(&msg))
+		default:
+			return []byte{}, opts, ErrorNotImplemented42
+		}
+	}
+
+	return data, opts, nil
 }
 
 /*
@@ -747,24 +850,64 @@ Send a message part on a socket.
 
 For a description of flags, see: http://api.zeromq.org/4-1:zmq-send#toc2
 */
-func (soc *Socket) Send(data string, flags Flag) (int, error) {
-	return soc.SendBytes([]byte(data), flags)
+func (soc *Socket) Send(data string, flags Flag, options ...interface{}) (int, error) {
+	return soc.SendBytes([]byte(data), flags, options...)
 }
 
 /*
 Send a message part on a socket.
 
 For a description of flags, see: http://api.zeromq.org/4-1:zmq-send#toc2
+
+TODO 4.2: subject to change until official release of ZeroMQ version 4.2
 */
-func (soc *Socket) SendBytes(data []byte, flags Flag) (int, error) {
+func (soc *Socket) SendBytes(data []byte, flags Flag, options ...interface{}) (int, error) {
 	if !soc.opened {
 		return 0, ErrorSocketClosed
 	}
-	d := data
-	if len(data) == 0 {
-		d = []byte{0}
+	if len(options) == 0 {
+		d := data
+		if len(data) == 0 {
+			d = []byte{0}
+		}
+		size, err := C.zmq_send(soc.soc, unsafe.Pointer(&d[0]), C.size_t(len(data)), C.int(flags))
+		if size < 0 {
+			return int(size), errget(err)
+		}
+		return int(size), nil
 	}
-	size, err := C.zmq_send(soc.soc, unsafe.Pointer(&d[0]), C.size_t(len(data)), C.int(flags))
+
+	if minor < 2 {
+		return 0, ErrorNotImplemented42
+	}
+
+	var msg C.zmq_msg_t
+	rc, err := C.zmq_msg_init_size(&msg, C.size_t(len(data)))
+	if rc != 0 {
+		return int(rc), errget(err)
+	}
+	defer C.zmq_msg_close(&msg)
+
+	C.zmq4_memcpy(C.zmq_msg_data(&msg), unsafe.Pointer(&data[0]), C.size_t(len(data)))
+
+	for _, option := range options {
+		switch t := option.(type) {
+		// TODO 4.2
+		case OptSetRoutingId:
+			// TODO 4.2
+		case OptSetGroup:
+			s := C.CString(string(t))
+			rc, err := C.zmq_msg_set_group(&msg, s)
+			C.free(unsafe.Pointer(s))
+			if rc != 0 {
+				return int(rc), errget(err)
+			}
+		default:
+			return 0, fmt.Errorf("Invalid message option: %#v", option)
+		}
+	}
+
+	size, err := C.zmq_msg_send(&msg, soc.soc, C.int(flags))
 	if size < 0 {
 		return int(size), errget(err)
 	}
@@ -1069,6 +1212,34 @@ func (soc *Socket) RecvBytesWithMetadata(flags Flag, properties ...string) (msg 
 		}
 	}
 	return data, metadata, nil
+}
+
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+func (soc *Socket) Join(group string) error {
+	if minor < 2 {
+		return ErrorNotImplemented42
+	}
+	cs := C.CString(group)
+	defer C.free(unsafe.Pointer(cs))
+	n, err := C.zmq_join(soc.soc, cs)
+	if n != 0 {
+		return errget(err)
+	}
+	return nil
+}
+
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+func (soc *Socket) Leave(group string) error {
+	if minor < 2 {
+		return ErrorNotImplemented42
+	}
+	cs := C.CString(group)
+	defer C.free(unsafe.Pointer(cs))
+	n, err := C.zmq_leave(soc.soc, cs)
+	if n != 0 {
+		return errget(err)
+	}
+	return nil
 }
 
 func hasCap(s string) (value bool) {
