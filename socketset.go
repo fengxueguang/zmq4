@@ -575,3 +575,15 @@ func (soc *Socket) SetUseFd(value int) error {
 	}
 	return soc.setInt(C.ZMQ_USE_FD, value)
 }
+
+// ZMQ_XPUB_VERBOSER: Pass subscribe and unsubscribe messages on XPUB socket
+//
+// Returns ErrorNotImplemented42 with ZeroMQ version < 4.2
+//
+// TODO 4.2: This is still draft, subject to change until the official release of ZeroMQ 4.2
+func (soc *Socket) SetXpubVerboser(value int) error {
+	if minor < 2 {
+		return ErrorNotImplemented42
+	}
+	return soc.setInt(C.ZMQ_XPUB_VERBOSER, value)
+}
